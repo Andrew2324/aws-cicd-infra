@@ -1,0 +1,123 @@
+name: CI/CD - CloudFormation Infra
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "templates/**"
+      - ".github/workflows/**"
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "templates/**"
+      - ".github/workflows/**"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Choose action"
+        required: true
+        default: "deploy"
+        type: choice
+        options:
+          - deploy
+          - destroy
+      environment:
+        description: "Target environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - prod
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  STACK_PREFIX: aws-cicd-infra
+  TEMPLATE_FILE: templates/vpc-ec2.yaml
+
+jobs:
+  validate:
+    name: Validate CloudFormation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate template
+        run: |
+          aws cloudformation validate-template \
+            --template-body file://${{ env.TEMPLATE_FILE }}
+
+  deploy:
+    name: Deploy (Dev)
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.action == 'deploy'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy stack
+        run: |
+          ENV_NAME="${{ github.event.inputs.environment || 'dev' }}"
+          STACK_NAME="${{ env.STACK_PREFIX }}-${ENV_NAME}"
+
+          aws cloudformation deploy \
+            --stack-name "${STACK_NAME}" \
+            --template-file "${{ env.TEMPLATE_FILE }}" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              EnvironmentName="${ENV_NAME}" \
+              KeyPairName="${{ secrets.EC2_KEYPAIR_NAME }}" \
+              AllowedSshCidr="${{ secrets.ALLOWED_SSH_CIDR }}"
+
+      - name: Show outputs
+        run: |
+          ENV_NAME="${{ github.event.inputs.environment || 'dev' }}"
+          STACK_NAME="${{ env.STACK_PREFIX }}-${ENV_NAME}"
+
+          aws cloudformation describe-stacks \
+            --stack-name "${STACK_NAME}" \
+            --query "Stacks[0].Outputs" \
+            --output table
+
+  destroy:
+    name: Destroy (Manual)
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Delete stack
+        run: |
+          ENV_NAME="${{ github.event.inputs.environment }}"
+          STACK_NAME="${{ env.STACK_PREFIX }}-${ENV_NAME}"
+
+          aws cloudformation delete-stack --stack-name "${STACK_NAME}"
+          echo "Delete initiated for ${STACK_NAME}"
+
+      - name: Wait for deletion
+        run: |
+          ENV_NAME="${{ github.event.inputs.environment }}"
+          STACK_NAME="${{ env.STACK_PREFIX }}-${ENV_NAME}"
+
+          aws cloudformation wait stack-delete-complete --stack-name "${STACK_NAME}"
+          echo "Stack deleted: ${STACK_NAME}"
