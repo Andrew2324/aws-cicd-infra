@@ -1,9 +1,9 @@
 # aws-cicd-infra  
 ### GitHub Actions CI/CD using AWS CloudFormation
 
-This repository demonstrates a CI/CD pipeline that validates and deploys AWS infrastructure using CloudFormation and GitHub Actions, following infrastructure-as-code and least-privilege best practices.
+This repository demonstrates a CI/CD pipeline that validates, and deploys AWS infrastructure using CloudFormation and GitHub Actions, following infrastructure-as-code and least-privilege best practices.
 
-The goal is to safely validate, deployed, and managed across environments using modern DevOps workflows without long-lived AWS credentials.
+The goal is to safely "validate, **deployed**, and managed" across environments using modern DevOps workflows without long-lived AWS credentials.
 
 ---
 
@@ -29,13 +29,31 @@ This design keeps costs low while demonstrating real-world deployment patterns.
 
 The pipeline is implemented using **GitHub Actions** and performs the following steps:
 
-1. **Authenticate to AWS using OIDC**
+1. Authenticate to AWS using OIDC
    - No static access keys
    - Short-lived credentials via IAM role trust
-2. **Validate CloudFormation templates**
-3. **Deploy infrastructure**
+2. Validate CloudFormation templates
+3. Deploy infrastructure using CloudFormation
    - Separate environments (e.g., `dev`)
-4. **Track deployments using GitHub Environments**
+4. Track deployments using GitHub Environments
+
+
+---
+
+## Architecture Diagram
+
+```mermaid
+flowchart TD
+    Dev[Developer] -->|Push| Repo[GitHub Repository]
+    Repo --> GA[GitHub Actions]
+    GA -->|OIDC| IAM[IAM Role]
+    GA --> CFN[CloudFormation Deploy]
+    CFN --> VPC[VPC]
+    VPC --> Subnet[Public Subnet]
+    VPC --> IGW[Internet Gateway]
+    Subnet --> EC2[EC2 - NGINX]
+    EC2 --> SSM[SSM Session Manager]
+```
 
 ---
 
