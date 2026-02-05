@@ -34,7 +34,7 @@ The pipeline is implemented using **GitHub Actions** and performs the following 
    - Short-lived credentials via IAM role trust
 2. Validate CloudFormation templates
 3. Deploy infrastructure using CloudFormation
-   - Separate environments (e.g., `dev`)
+   - Separate environments (`dev`,`prod`)
 4. Track deployments using GitHub Environments
 
 
